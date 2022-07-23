@@ -201,7 +201,7 @@ class PhotoSize:
 @dataclass
 class Photo(AttachmentOwned):
     album_id: ObjectIdType
-    user_id: UserIdType
+    user_id: Optional[UserIdType]
     text: str
     date: datetime.datetime
     sizes: List[PhotoSize]
@@ -238,16 +238,27 @@ class Video(AttachmentOwned):
 
 
 @dataclass
+class Artist:
+    id: str
+    name: str
+    domain: str
+
+
+@dataclass
 class Audio(AttachmentOwned):
     artist: str
     title: str
     duration: int
+    is_explicit: bool
+    is_focus_track: bool
+    track_code: str
     url: str
-    lyrics_id: int
-    album_id: int
-    genre_id: int
     date: datetime.datetime
-    no_search: Optional[bool]
+    album_id: int
+    short_videos_allowed: bool
+    stories_allowed: bool
+    stories_cover_allowed: bool
+    main_artists: List[Artist]
 
 
 @dataclass
@@ -282,7 +293,7 @@ class Link(Attachment):
     title: str
     caption: Optional[str]
     description: Optional[str]
-    photo: Photo
+    photo: Optional[Photo]
     is_external: Optional[bool]
     product: Optional[Product]
     button: Optional[Button]
@@ -332,11 +343,40 @@ Photos = List[int]
 
 
 @dataclass
-class MarketCollection(AttachmentOwned):
+class Currency:
+    id: int
+    name: str
     title: str
-    photo: Photo
-    count: int
-    updated_time: datetime.datetime
+
+
+@dataclass
+class Price:
+    amount: str
+    text: str
+    currency: Currency
+
+
+@dataclass
+class MarketCategorySection:
+    id: int
+    name: str
+
+
+@dataclass
+class MarketCategory:
+    id: int
+    name: str
+    section: MarketCategorySection
+
+
+@dataclass
+class Market(AttachmentOwned):
+    availability: int
+    description: str
+    title: str
+    thumb_photo: str
+    category: MarketCategory
+    price: Price
 
 
 def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
@@ -352,7 +392,7 @@ def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
             id=validate_type(data["id"], int),
             owner_id=validate_type(data["owner_id"], int),
             album_id=validate_type(data["album_id"], ObjectIdType),
-            user_id=validate_type(data["user_id"], UserIdType),
+            user_id=validate_type_optional(data.get("user_id"), UserIdType),
             text=validate_type(data["text"], str),
             date=datetime.datetime.fromtimestamp(validate_type(data["date"], int)),
             sizes=[],
@@ -400,7 +440,9 @@ def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
             description=validate_type_optional(data.get("description"), str),
             photo=cast(
                 Photo, attachment_factory({"type": "photo", "photo": data["photo"]})
-            ),
+            )
+            if "photo" in data
+            else None,
             is_external=validate_type_optional(data.get("is_external"), bool),
             product=product,
             button=button,
@@ -453,6 +495,59 @@ def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
                 validate_type_optional(data.get("upcoming"), int)
             ),
             image=sizes,
+        )
+
+    if attachment_type == "audio":
+        return Audio(
+            id=validate_type(data["id"], int),
+            artist=validate_type(data["artist"], str),
+            owner_id=validate_type(data["owner_id"], int),
+            title=validate_type(data["title"], str),
+            duration=validate_type(data["duration"], int),
+            is_explicit=validate_type(data["is_explicit"], bool),
+            is_focus_track=validate_type(data["is_focus_track"], bool),
+            track_code=validate_type(data["track_code"], str),
+            url=validate_type(data["url"], str),
+            date=datetime.datetime.fromtimestamp(validate_type(data["date"], int)),
+            album_id=validate_type(data["album_id"], int),
+            main_artists=[
+                Artist(
+                    name=validate_type(artist["name"], str),
+                    domain=validate_type(artist["domain"], str),
+                    id=validate_type(artist["id"], str),
+                )
+                for artist in data["main_artists"]
+            ],
+            short_videos_allowed=validate_type(data["short_videos_allowed"], bool),
+            stories_allowed=validate_type(data["stories_allowed"], bool),
+            stories_cover_allowed=validate_type(data["stories_cover_allowed"], bool),
+        )
+
+    if attachment_type == "market":
+        return Market(
+            id=validate_type(data["id"], int),
+            owner_id=validate_type(data["owner_id"], int),
+            availability=validate_type(data["availability"], int),
+            category=MarketCategory(
+                id=validate_type(data["category"]["id"], int),
+                name=validate_type(data["category"]["name"], str),
+                section=MarketCategorySection(
+                    id=validate_type(data["category"]["section"]["id"], int),
+                    name=validate_type(data["category"]["section"]["name"], str),
+                ),
+            ),
+            description=validate_type(data["description"], str),
+            price=Price(
+                amount=validate_type(data["price"]["amount"], str),
+                text=validate_type(data["price"]["text"], str),
+                currency=Currency(
+                    id=validate_type(data["price"]["currency"]["id"], int),
+                    name=validate_type(data["price"]["currency"]["name"], str),
+                    title=validate_type(data["price"]["currency"]["title"], str),
+                ),
+            ),
+            title=validate_type(data["title"], str),
+            thumb_photo=validate_type(data["thumb_photo"], str),
         )
 
     raise NotImplementedError(
@@ -557,7 +652,7 @@ class VkApiWall(VkApiBase):
                     ),
                 )
 
-            attachments_raw = post_raw["attachments"]
+            attachments_raw = post_raw.get("attachments", [])
             attachments: List[Attachment] = []
 
             for attachment_raw in attachments_raw:
