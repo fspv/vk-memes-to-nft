@@ -22,7 +22,7 @@ class NFT(Base):
     NFT to be uploaded somewhere
     """
 
-    __tablename__ = "nfts"
+    __tablename__ = "nft"
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     hash = sqlalchemy.Column(
@@ -30,6 +30,8 @@ class NFT(Base):
     )
 
     url = sqlalchemy.Column(sqlalchemy.String, comment="URL of the picture")
+    title = sqlalchemy.Column(sqlalchemy.String, comment="Title of the NFT")
+    description = sqlalchemy.Column(sqlalchemy.String, comment="Description of the NFT")
     uploaded = sqlalchemy.Column(
         sqlalchemy.Boolean, comment="Was NFT uploaded to OpenSea?", default=False
     )
