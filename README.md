@@ -26,3 +26,7 @@ cd /src/
 ipython uploader/scheduler.py
 ipython uploader/processor.py
 ```
+
+# High-level design
+![Untitled](https://user-images.githubusercontent.com/1616237/180609850-716b3759-3634-4c08-9727-e0ba7b259858.png)
+
