@@ -25,7 +25,7 @@ class VkPostType(enum.Enum):
 
 
 class VkPost(Base):
-    __tablename__ = "vk_posts"
+    __tablename__ = "vk_post"
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
