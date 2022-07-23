@@ -61,7 +61,14 @@ class ResultOpenseaUploaderStuct:
 @dataclass
 class ImageFileOpenseaUploaderStuct:
     file_path: str
+    title: str
     description: str
+
+
+@dataclass
+class File:
+    nft_id: int
+    file_path: pathlib.Path
 
 
 class WorkerBase(abc.ABC, Generic[_UploaderParams]):
@@ -103,13 +110,13 @@ class WorkerBase(abc.ABC, Generic[_UploaderParams]):
 
         return pathlib.Path(tmp_file)
 
-    def _get_files(self) -> Iterator[pathlib.Path]:
+    def _get_files(self) -> Iterator[File]:
         tmp_dir = tempfile.mkdtemp()
 
         for nft in db_session.query(NFT).filter(NFT.id.in_(self._ids)):
             logging.info("Downloading NFT %s", nft)
 
-            yield self._download(nft.url, tmp_dir)
+            yield File(nft.id, self._download(nft.url, tmp_dir))
 
     def _upload(self) -> None:
         """
@@ -162,7 +169,7 @@ class UploaderBase(abc.ABC, Generic[_UploaderParams]):
     def __init__(self, params: _UploaderParams) -> None:
         self._params = params
 
-    def upload(self, files: Iterator[pathlib.Path]) -> None:
+    def upload(self, files: Iterator[File]) -> None:
         """
         To be implemented in a subclass
         """
@@ -179,17 +186,28 @@ class OpenseaAutomaticUploader(UploaderBase):
         for _, image_file in enumerate(image_files):
             yield NFTOpenseaUploaderStuct(
                 file_path=image_file.file_path,
-                nft_name="Mem",
+                nft_name=image_file.title,
                 collection=collection,
                 description=image_file.description,
             )
 
-    def upload(self, files: Iterator[pathlib.Path]) -> None:
+    def upload(self, files: Iterator[File]) -> None:
         # Write json file with the list of nft needed by the nft uploader
         result = ResultOpenseaUploaderStuct(
             list(
                 self._get_nfts(
-                    [ImageFileOpenseaUploaderStuct(str(file), "") for file in files],
+                    [
+                        ImageFileOpenseaUploaderStuct(
+                            str(file.file_path),
+                            db_session.query(NFT)
+                            .filter(NFT.id == file.nft_id)[0]
+                            .title,
+                            db_session.query(NFT)
+                            .filter(NFT.id == file.nft_id)[0]
+                            .description,
+                        )
+                        for file in files
+                    ],
                     self._params.collection,
                 )
             )
