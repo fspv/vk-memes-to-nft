@@ -19,18 +19,19 @@ def get_new_posts(vk_service_token: str, vk_community: str) -> List[vk.api.Post]
     posts: List[vk.api.Post] = []
 
     for post in (
-        vk.api.VkApiWall(vk_params).get(domain=vk_community, offset=0, count=10).items
+        vk.api.VkApiWall(vk_params)
+        .get(domain=vk_community, offset=100, count=100)
+        .items
     ):
         logging.debug("Got post %s", post)
 
         if db_session.query(VkPost).filter_by(id=post.id).first():
             logging.debug("Post %s has already been indexed", post.id)
-            continue
+        else:
+            logging.info("New post found %s", post.id)
 
-        logging.info("New post found %s", post.id)
-
-        db_session.add(VkPost(id=post.id))
-        db_session.commit()
+            db_session.add(VkPost(id=post.id))
+            db_session.commit()
 
         posts.append(post)
 
