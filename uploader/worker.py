@@ -5,6 +5,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import urllib.parse
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
@@ -14,6 +15,7 @@ import requests
 import sqlalchemy
 
 from uploader.models import NFT, create_database
+from uploader.utils import download_and_generate_hash, retry
 
 db_engine = sqlalchemy.create_engine("sqlite:///test.db")
 db_session = create_database(db_engine)
@@ -76,6 +78,11 @@ class WorkerBase(abc.ABC, Generic[_UploaderParams]):
     Worker uploads given NFTs into theee destination
 
     This is a generic class, concrete implementation should be defined in a subclass
+
+    Contract (invariant held before invoking the worker):
+        - NFT with this hash has never been uploaded before when it reaches the worker
+        - Nobody else is working on the same NFT
+        - Identical NFTs can't be supplied to the worker
     """
 
     _ids: List[int]
@@ -177,8 +184,18 @@ class UploaderBase(abc.ABC, Generic[_UploaderParams]):
 
 
 class OpenseaAutomaticUploader(UploaderBase):
+    _requests_session: requests.Session
+    _opensea_api_user_agent = (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/103.0.5060.53 Safari/537.36"
+    )
+    _opensea_api_url = "https://api.opensea.io/api/v1"
+
     def __init__(self, params: OpenseaAutomaticUploaderParams) -> None:
         super().__init__(params)
+        self._requests_session = requests.Session()
 
     def _get_nfts(
         self, image_files: List[ImageFileOpenseaUploaderStuct], collection: str = ""
@@ -191,7 +208,91 @@ class OpenseaAutomaticUploader(UploaderBase):
                 description=image_file.description,
             )
 
-    def upload(self, files: Iterator[File]) -> None:
+    def _remove_old_sale_files(self) -> None:
+        # Makes old files invisible for artifacts gatherer
+        directory = self._params.uploader_dir + "/data"
+        for file in os.listdir(directory):
+            if file.endswith("json"):
+                os.rename(
+                    directory + "/" + file,
+                    directory + "/" + file + f"_{time.time()}.backup",
+                )
+
+    def _gather_opensea_urls(self) -> List[str]:
+        directory = self._params.uploader_dir + "/data"
+        result: List[str] = []
+
+        for file in os.listdir(directory):
+            if not (file.startswith("sale_") and file.endswith(".json")):
+                continue
+
+            logging.info("Found file %s", file)
+
+            with open(directory + "/" + file) as fd:
+                data = json.loads(fd.read())
+
+                logging.info("File %s data: %s", file, data)
+
+                for nft in data["nft"]:
+                    result.append(nft["nft_url"].strip())
+
+        return result
+
+    @retry(tries=5)
+    def _update_opensea_url(self, opensea_url: str) -> None:
+        """
+        Downloads the image from the opensea and finds corresponding NFT
+        in the database to update it with opensea url, where this NFT is
+        uploaded to
+        """
+        session = self._requests_session
+
+        # Remove any extra get params from the url
+        opensea_url = opensea_url.split("?")[0]
+
+        _, _, _, _, _, address, number = opensea_url.split("/")
+
+        if db_session.query(NFT).filter_by(opensea_url=opensea_url).first():
+            return
+
+        time.sleep(1)
+
+        url = f"{self._opensea_api_url}/asset/{address}/{number}?format=json"
+
+        logging.info("NFT url is %s", url)
+
+        headers = {
+            "User-Agent": self._opensea_api_user_agent,
+        }
+
+        response = session.get(url, headers=headers)
+
+        data = json.loads(response.text)
+
+        logging.info("NFT data: %s", data)
+
+        if data.get("success", True):
+            image_url = data["image_url"] + "=s0"
+
+            image_hash = download_and_generate_hash(image_url)
+
+            found_nft = db_session.query(NFT).filter_by(hash=image_hash)[0]
+
+            found_nft.opensea_url = opensea_url
+
+            logging.info("Updated NFT %s", found_nft)
+
+            db_session.commit()
+        else:
+            raise RuntimeError(
+                f"NFT with url {opensea_url} can't be fetched from OpenSea"
+            )
+
+    def _update_opensea_urls(self, opensea_urls: List[str]) -> None:
+        for opensea_url in opensea_urls:
+            self._update_opensea_url(opensea_url)
+
+    def _run_uploader(self, files: Iterator[File]) -> None:
         # Write json file with the list of nft needed by the nft uploader
         result = ResultOpenseaUploaderStuct(
             list(
@@ -248,6 +349,17 @@ class OpenseaAutomaticUploader(UploaderBase):
                 f"stdout: {stdout}, "
                 f"stderr: {stderr}"
             )
+
+    def upload(self, files: Iterator[File]) -> None:
+        # Cleanup old artifacts
+        self._remove_old_sale_files()
+
+        # Run uploader
+        self._run_uploader(files)
+
+        # Gathering artifacts
+        opensea_urls = self._gather_opensea_urls()
+        self._update_opensea_urls(opensea_urls)
 
 
 class OpenseaAutomaticWorker(WorkerBase[OpenseaAutomaticUploaderParams]):
