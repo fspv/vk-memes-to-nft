@@ -3,6 +3,7 @@ import enum
 # import pg8000
 import sqlalchemy
 import sqlalchemy.orm
+
 # from google.cloud.sql.connector import connector
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
@@ -30,6 +31,9 @@ class NFT(Base):
     )
 
     url = sqlalchemy.Column(sqlalchemy.String, comment="URL of the picture")
+    opensea_url = sqlalchemy.Column(
+        sqlalchemy.String, comment="URL of the asset on OpenSea"
+    )
     title = sqlalchemy.Column(sqlalchemy.String, comment="Title of the NFT")
     description = sqlalchemy.Column(sqlalchemy.String, comment="Description of the NFT")
     uploaded = sqlalchemy.Column(
@@ -41,6 +45,9 @@ class NFT(Base):
             f"<NFT("
             f"id={self.id}, "
             f"url={self.url}, "
+            f"opensea_url={self.opensea_url}, "
+            f"title={self.title}, "
+            f"description={self.description}, "
             f"hash={self.hash}, "
             f"uploaded={self.uploaded}"
             ")>"
