@@ -262,12 +262,6 @@ class Audio(AttachmentOwned):
 
 
 @dataclass
-class Document(Attachment):
-    def __init__(self) -> None:
-        raise NotImplementedError("")
-
-
-@dataclass
 class Graffiti(AttachmentOwned):
     photo_130: str
     photo_604: str
@@ -377,6 +371,45 @@ class Market(AttachmentOwned):
     thumb_photo: str
     category: MarketCategory
     price: Price
+
+
+@dataclass
+class DocumentPreviewPhotoSize:
+    type: str
+    src: str
+    width: int
+    height: int
+
+
+@dataclass
+class DocumentPreviewVideo:
+    file_size: int
+    src: str
+    width: int
+    height: int
+
+
+@dataclass
+class DocumentPreviewPhoto:
+    sizes: List[PhotoSize]
+
+
+@dataclass
+class DocumentPreview:
+    photo: DocumentPreviewPhoto
+    video: DocumentPreviewVideo
+
+
+@dataclass
+class Document(AttachmentOwned):
+    title: str
+    size: int
+    ext: str
+    date: datetime.datetime
+    type: int
+    url: str
+    preview: DocumentPreview
+    access_key: str
 
 
 def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
@@ -548,6 +581,38 @@ def attachment_factory(attachment: Dict[str, Any]) -> Attachment:
             ),
             title=validate_type(data["title"], str),
             thumb_photo=validate_type(data["thumb_photo"], str),
+        )
+
+    if attachment_type == "doc":
+        return Document(
+            id=validate_type(data["id"], int),
+            owner_id=validate_type(data["owner_id"], int),
+            title=validate_type(data["title"], str),
+            size=validate_type(data["size"], int),
+            ext=validate_type(data["ext"], str),
+            type=validate_type(data["type"], int),
+            url=validate_type(data["url"], str),
+            preview=DocumentPreview(
+                photo=DocumentPreviewPhoto(
+                    sizes=[
+                        PhotoSize(
+                            type=validate_type(size_raw["type"], str),
+                            url=validate_type(size_raw["src"], str),
+                            width=validate_type(size_raw["width"], int),
+                            height=validate_type(size_raw["height"], int),
+                        )
+                        for size_raw in data["preview"]["photo"]["sizes"]
+                    ]
+                ),
+                video=DocumentPreviewVideo(
+                    src=validate_type(data["preview"]["video"]["src"], str),
+                    width=validate_type(data["preview"]["video"]["width"], int),
+                    height=validate_type(data["preview"]["video"]["height"], int),
+                    file_size=validate_type(data["preview"]["video"]["file_size"], int),
+                ),
+            ),
+            date=datetime.datetime.fromtimestamp(validate_type(data["date"], int)),
+            access_key=validate_type(data["access_key"], str),
         )
 
     raise NotImplementedError(
