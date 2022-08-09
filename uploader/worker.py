@@ -139,10 +139,10 @@ class WorkerBase(abc.ABC, Generic[_UploaderParams]):
         """
 
         for nft in db_session.query(NFT).filter(NFT.id.in_(self._ids)):
-            logging.info("Marking %s upload as complete", nft)
             nft.uploaded = True
 
-        db_session.commit()
+            logging.info("Marking %s upload as complete", nft)
+            db_session.commit()
 
     def upload(self) -> None:
         self._upload()
